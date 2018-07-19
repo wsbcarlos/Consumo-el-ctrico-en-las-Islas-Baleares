@@ -1,0 +1,1344 @@
+---
+title: "Análsis del consumo eléctrico diario en las Islas Baleares"
+subtitle: "Serie diaria  |  Periodo: 01/01/1999 a 31/01/2017"
+author: "Carlos Khali Delgado Moujahid"
+date: "June 28, 2018"
+output:
+  prettydoc::html_pretty:
+    cache: yes
+    fig_caption: yes
+    number_sections: yes
+    theme: leonids
+    toc: yes
+    toc_depth: 2
+
+---
+
+# Introducción
+
+El objetivo de este análisis de series temporales es comprar los distintos modelos que tenemos y comparar para ver cual se ajusta mejor a los datos diarios que tenemos y cual es el mejor nos predice el consumo electrico diario en las Islas Baleares.
+
+El archivo que contiene los datos es el siguiente: "EIBI_DelgadoMoujahid.xlsx".
+
+Precedimiento a seguir:
+
+1. Construir el Modelo ARIMA tratando la estacionalidad anual como determinista.
+2. Representación trigonométrica.
+3. BATS y el TBASTS.
+4. Evaluamos los modelos y analizamo su capacidad predictiva (usaremos los errores de predicción que se comenten en cada caso).
+5. Conclusiones
+
+## Preparación del entorno de trabajo
+
+Cargamos el directorio de trabajo.
+```{r}
+## Cargamos el directorio
+setwd("~/Desktop/Máster en Big Data/Series Temporales/Trabajo Final")
+```
+
+```{r setup, eval=TRUE, include=FALSE, warning = FALSE}
+## Instalación de las librerías
+# install.packages(c("knitr", "rmarkdown"),  repos = "http://cran.us.r-project.org")
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+# install.packages("TSA", repos = "http://cran.us.r-project.org")
+# install.packages("scales", repos = "http://cran.us.r-project.org")
+# install.packages("tsoutliers", repos = "http://cran.us.r-project.org")
+# install.packages("forecast", repos = "http://cran.us.r-project.org")
+# install.packages("KFAS", repos = "http://cran.us.r-project.org")
+# install.packages("KFKSDS", repos = "http://cran.us.r-project.org")
+# install.packages("car", repos = "http://cran.us.r-project.org")
+# install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+# install.packages("gridExtra", repos = "http://cran.us.r-project.org")
+# install.packages("reshape2", repos = "http://cran.us.r-project.org")
+# install.packages("tseries", repos = "http://cran.us.r-project.org")
+# install.packages("stsm", repos = "http://cran.us.r-project.org")
+# install.packages("lmtest", repos = "http://cran.us.r-project.org")
+# install.packages("urca", repos = "http://cran.us.r-project.org")
+# install.packages("dlm", repos = "http://cran.us.r-project.org")
+# install.packages("ggthemes", repos = "http://cran.us.r-project.org")
+# install.packages("LSTS", repos = "http://cran.us.r-project.org")
+# install.packages("TSPred", repos = "http://cran.us.r-project.org")
+# install.packages("tsoutliers", repos = "http://cran.us.r-project.org")
+# install.packages("Kendall", repos = "http://cran.us.r-project.org")
+# install.packages("KFAS", repos = "http://cran.us.r-project.org")
+# install.packages("glarma", repos = "http://cran.us.r-project.org")
+```
+
+## Librerías
+```{r echo=TRUE, eval=FALSE}
+library(TSA)
+library(scales)
+library(tsoutliers)
+library(forecast)
+library(KFAS)
+library(car)
+library(ggplot2)
+library(gridExtra)
+library(ggthemes)
+library(scales)
+library(reshape2)
+library(tseries)
+library(stsm)
+require(lmtest)
+library(urca)
+library(dlm)
+library(LSTS)
+library(TSPred)
+library(Kendall)
+library(glarma)
+```
+```{r echo=TRUE, eval=TRUE, include=FALSE}
+library(TSA)
+library(scales)
+library(tsoutliers)
+library(forecast)
+library(KFAS)
+library(car)
+library(ggplot2)
+library(gridExtra)
+library(ggthemes)
+library(scales)
+library(reshape2)
+library(tseries)
+library(stsm)
+require(lmtest)
+library(urca)
+library(dlm)
+library(LSTS)
+library(TSPred)
+library(Kendall)
+```
+
+
+#Análsis previo de la serie
+
+## Lectura de los datos
+```{r, warning=FALSE}
+## Leactura del archivo
+datos <- read.csv(file = "EIBI_DelgadoMoujahid.csv", header = FALSE, sep = ";")
+
+
+## Seleccionamos la serie del data frame
+eibi.serie <- datos$V2
+
+## Transformamos en serie temporal
+eibi.serie <- ts(eibi.serie, start = c(1999, 1), frequency = 365.25)
+
+## Reservamos los datos del 2017 para el apartado de predicciones
+eibi <- window(eibi.serie, 1999, 2017) ## Datos de entrenamiento
+eibi.2017 <- window(eibi.serie, 2017, 2018) ## Datos de Test
+```
+
+##Plot de la serie
+```{r}
+## Gráfico de la serie original
+autoplot(eibi) +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  labs(title = "Consumo de energía eléctrica en las Islas Baleares", 
+       subtitle = "Serie diaria  |  periodo: 01/01/1999 a 31/12/2016") +
+  xlab("Periodo") +
+  ylab("Millones KW / H")
+```
+
+Tenemos una serie con tendencia claramente creciente y una fuerte estacionalidad creciente año tras año.
+
+##Desomposición de la serie
+```{r}
+## Descomponemos la serie con la función "stl"
+stl.eibi <- stl(eibi, s.window = "periodic")
+
+## Visualizamos la descomposición
+autoplot(stl.eibi) +
+  theme(axis.title=element_text(face = "bold.italic", size = "10", color = "black")) +
+  labs(title = "Descomposición de la serie - EIBI", 
+       subtitle = "EIBI = Trend + Seasonal + Remainder  |  periodo: 01/01/1999 a 31/12/2016") +
+  xlab("Periodo") +
+  ylab("Millones KW / H")
+```
+
+Observamos que descomponiendo la serie obtenemos 4 gráficos en 1:
+
+  * Data: Serie original y se decompone en las siguiente 3 gráficas.
+  
+  * Trend: Tendecia, representa el comportamiento a largo plazo.
+  
+  * Seasonal: Estacionalidad, representa las variaciones preiódicas de la serie.
+  
+  * Remainder: Componente residual (también conocimo como ruido de la serie), representa las fluctuaciones a corto plazo.
+
+###Serie ajustada por estacionalidad
+
+```{r}
+## podemos extraer la descomposición de forma individual
+## Transformamos la lista en un data frame
+stl.eibi.df <- data.frame(get("time.series", stl.eibi))
+
+## Guardamos las descomposiciones independientemente
+seasonal.stl.ibi <- stl.eibi.df$seasonal # Seasonal
+trend.stl.ibi <- stl.eibi.df$trend # Trend
+remainder.stl.ibi <- stl.eibi.df$remainder # Residuos
+
+
+## Obtenemos la serie ajustada por estacionalidad
+eibi.serie.seasonal.adjusted = (eibi - seasonal.stl.ibi)
+  
+## Asignamos una sequencia de fechas
+fechas <- data.frame(time = seq(as.Date('1999-01-01'), by = 'days', length = 6575))
+#head(date, 5)
+#tail(date, 5)
+
+## Agrupamos los datos en un data frame
+eibi.seasonal.adjust <- data.frame(fechas, eibi, eibi.serie.seasonal.adjusted)
+names(eibi.seasonal.adjust) <- c("Date", "EIBI_Original", "EIBI_Ajustada")
+
+## Obtenemos el gráfico de las series
+ggplot(data = eibi.seasonal.adjust, aes(x = eibi.seasonal.adjust$Date, colour = Series), scale = ts) +
+  geom_line(aes(y = eibi.seasonal.adjust$EIBI_Original, colour = "Original")) +
+  geom_line(aes(y = eibi.seasonal.adjust$EIBI_Ajustada, colour = "Ajustada")) +
+  scale_y_continuous() +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  scale_colour_manual(values = c("red", "black")) +
+  labs(title = "Serie EIBI original vs Serie EIBI Ajustada",
+       subtitle = "Ajuste por estacionalidad   |  periodo: 01/01/1999 a 31/12/2016") +
+  xlab("Periodo") +
+  ylab("Millones KW / h") +
+  labs(fill = "EIBI:")
+```
+
+Observando la serie ajustada por estacionalidad se observa que hay grandes picos al principio y al final de la serie, seguramente habrá que realizar algun tratamiento de utiliers. Desestacionalizando la serie es una buena forma de ver como la tendencia (que se puede explicar) y el ruido (difícil de explicar) moldean nuestra.
+
+## Serie en escala logarítmica
+```{r}
+## Transformamos la serie en escala logarítmica
+log.eibi = log(eibi)
+
+## Plot de la serie en scala logarítmica
+autoplot(log.eibi) +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  labs(title = "Consumo de energía eléctrica en las Islas Baleares", 
+       subtitle = "Serie diaria en escala logarítmica  |  periodo: 01/01/1999 a 31/12/2016") +
+  xlab("Periodo") +
+  ylab("Log(Millones KW / H)")
+
+```
+
+Escalando logarítmicamente la serie conseguimos suavizar y ajustar la varianza. De este modo se proporcionan las varianzas más altas, ya que por ejemplo en una escala logarítmica, un incremento de 0 KW/H a 10 KW/H equivale al mismo incremento que de 10 KW/H a 100 KW/H. Tras la trasformación el rango de variabilidad es de 6 a 8.5.
+
+## Fourier - Funciones Trigonométricas
+
+Acontinuación usaremos representaciones trigonométricas para tratar la parte determinista de la estacionalidad. Para ello me baso en la teoria proporcionada en el dominio de las frecuencias.
+```{r}
+## Proceso basado en las funciones de Tomás del Barrio
+t = seq(1, nrow(as.matrix(eibi)))
+det_seas = cos(0 * t)
+
+## Bucle tiene que ir hasta 182 días (365/2) además hay que añadir la frcuencia PI 
+for (j in 1:182) {det_seas = cbind(det_seas, cos(2 * pi * t * j / 365.25), sin(2 * pi * t * j / 365.25))} 
+
+## Creo que sería correcto añadir un término cuadrático
+exo1 <- cbind(det_seas, t, t^2)
+end1 <- log.eibi
+
+## Los residuos son:
+rho <- solve(t(exo1) %*% exo1) %*% (t(exo1) %*% end1)
+eibi_e = log.eibi - exo1 %*% rho
+eibi_f = exo1 %*% rho
+eibi_e <- ts(eibi_e, start = c(1999, 1), frequency = 365.25) 
+eibi_f <- ts(eibi_f, start = c(1999, 1), frequency = 365.25) 
+
+## Asignamos una sequencia de fechas
+fechas <- data.frame(time = seq(as.Date('1999-01-01'), by = 'days', length = 6575))
+#head(date, 5)
+#tail(date, 5)
+
+## Agrupamos los datos en un data frame
+eibi.dom.freq <- data.frame(fechas, log.eibi, eibi_f)
+names(eibi.dom.freq) <- c("Date", "EIBI_Original", "EIBI_Ajustada")
+head(eibi.dom.freq, 5)
+```
+
+###Representamos visualmente la serie trasformada
+
+```{r, warning=FALSE}
+## Representamos la serie original vs dominio de las frecuencias
+ggplot(data = eibi.dom.freq, aes(x = eibi.dom.freq$Date, colour = Series), scale = ts) +
+  geom_line(aes(y = eibi.dom.freq$EIBI_Original, colour = "Original")) +
+  geom_line(aes(y = eibi.dom.freq$EIBI_Ajustada, colour = "Ajustada")) +
+  scale_y_continuous() +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  scale_colour_manual(values = c("red", "black")) +
+  labs(title = "Serie EIBI original vs Serie EIBI Ajustada",
+       subtitle = "Usando el dominio de las frequéncias  |  periodo: 01/01/1999 a 31/12/2016") +
+  xlab("Periodo") +
+  ylab("Log(Millones KW / h)") +
+  labs(fill = "EIBI:") 
+```
+
+Sin duda alguna como se observa en el gráficp la estacionalidad mensual se adapta perfectamente a nuestra serie ajustada mediante el dominio de frequencias que hemos propuestos.
+
+
+```{r}
+## Gráficos
+autoplot(eibi_e) +
+  theme(axis.title=element_text(face = "bold.italic", size = "10", color = "black")) +
+  labs(title=" Serie EIBI - Transformada de Fourier",
+       subtitle = "Usando el dominio de las frequéncias  |  periodo: 01/01/1999 a 31/12/2016") +
+  geom_hline(yintercept = 0, col="red") +
+  xlab("Período") +
+  ylab("Valores")
+```
+
+Siguiendo el procedimiento de otros estudios, los mejores resultados los obtendremos mediante la serie traformada, ya que tenemos la serie más estable y con la estacionalidad controlada.
+
+# Modelizando la serie
+
+## Autocovarinzas y autocorrelaciones
+
+```{r}
+## Correlogramas FAS y FAP
+FAS1 <- ggAcf(eibi_e, lag.max = 36, main = "Correlograma FAS")
+FAP1 <- ggPacf(eibi_e, lag.max = 36, main = "Correlograma FAP")
+
+## Uso la función grid.arrange() de la librería gridExtra para unir los gráficos en uno
+grid.arrange(FAS1, FAP1, nrow = 2, ncol = 1)
+```
+
+Claramente observamos que hay estacionalidad cada 7 días como nos indica el FAS, además decae muy lentamente lo que nos indica que hay que diferenciar la serie. En el FAP se puede observar algun efecto satélite.
+
+
+Aplicamos diferencias sobre la parte regular, para estacionarizar la serie.
+```{r}
+## Aplicamos diferencias con la funcion diff y dibujamos los correlogramas
+FAS2 <- ggAcf(diff(eibi_e, 7), lag.max = 36, main = "Correlograma FAS: 1ª Diferencia")
+FAP2 <- ggPacf(diff(eibi_e, 7), lag.max = 36, main = "Correlograma FAP: 1ª Diferencia")
+grid.arrange(FAS2, FAP2, nrow = 2, ncol = 1)
+```
+A partir de los correlogramas es díficl deducir el orden del autoregressivo y la media móvil, pero lo que es seguro es que la serie se ha de componer por ambos con orden 1 como mínimo. Por lo consiguiente, empezaremos a calcular los modelos ARIMA apartir de un AR(1) y una MA(1) en la parte regular y con una diferencia estacional de periodo 7.
+
+## Modelos SARIMA
+
+###SARIMA (1, 0, 0)(0, 1, 0)
+```{r}
+## Aplicamos el un SARIMA (1, 0, 0)(0, 1, 0)
+modelo.sarima_1 <- arima(eibi_e, order = c(1, 0, 1), seasonal = list(order = c(0, 1, 0), period = 7))
+
+## Visualizamos los coeficientes del autorregresivo
+coeftest(modelo.sarima_1)
+```
+Observamos que el autorrgressivos es significativo.
+
+```{r}
+## Criterio de Información de Akaike 
+modelo.sarima_1$aic
+```
+Nos servirá para comparar entre modelos.
+
+
+¿El autoregresivo es estacionario?
+```{r}
+## Para ello la inversa de las raices tienen que estar dentro del circulo de unidad
+## La función autoplot() sobre el modelo nos proporciona directamente los valores de forma visual
+autoplot(modelo.sarima_1) +
+  labs(title = "Círculo de unidad - ARIMA (1, 0, 1)(0, 1, 0)")
+```
+Observamos que las inversas de las raices caen dentro del círculo de unidad por lo tanto podemos considerar que la parte autorregresiva es estacionaria y la parte media móvil es invertible.
+
+Siguiente paso será obtener el correlograma de los residuos, y observar como se comporta los residuos.
+
+```{r}
+## Obtenemos el correlograma de los residuos
+res.modelo.sarima_1 = residuals(modelo.sarima_1)
+FAS_RES1 <- ggAcf(res.modelo.sarima_1, lag.max = 36, main = "Correlograma FAS: Residuos SARIMA (1, 0, 1)(0, 1, 0)")
+FAP_RES1 <- ggPacf(res.modelo.sarima_1, lag.max = 36, main = "Correlograma FAP: Residuos SARIMA (1, 0, 1)(0, 1, 0)")
+grid.arrange(FAS_RES1, FAP_RES1, nrow = 2, ncol = 1) 
+```
+
+```{r}
+## Creo una función para obtener los distindos gráficos para visualizar los risiduos del modelo
+f_residuals <- function(modelo, fejer.m, fejer.r){
+  res.modelo <- residuals(modelo)
+  op <- par(no.readonly = TRUE)
+  layout(matrix(c(1, 2, 3, 4), 2, 2, byrow = TRUE))
+  plot.ts(res.modelo, ylab='', main = "Serie EIBI transformada")
+  stats::spectrum(res.modelo, method = "ar")
+  stats::spectrum(res.modelo, kernel("fejer", m = fejer.m, r = fejer.r))
+  stats::spectrum(res.modelo)
+  par(op)
+}
+
+## Ejecutamos la función que hemos creado
+f_residuals(modelo = modelo.sarima_1, fejer.m = 200, fejer.r = 10)
+```
+
+Observamos que los residuos todavía no toman forma de ruido blanco, habrá que seguir probando otros modelos. De todos modos vamos a relaizar un tsdiag() sobre el modelo
+
+
+```{r}
+tsdiag(object = modelo.sarima_1)
+```
+
+Observamos que los p valores del test de Ljung-Box son casi todos cercanos a 0, lo que NO nos permite rechazar la hipotesis nula de que los residuoes estan correlacionados entre ellos. Por lo consiguiente hay parte de la variablidad de la serie que podría ser recogida por un modelo mejor especificado.
+
+###SARIMA (1, 0, 0)(0, 1, 1)
+
+Para este segundo modelo voy a colocar la media móvil en la parte estacionaría.
+```{r}
+## Aplicamos el un SARIMA (1, 0, 0)(0, 1, 1)
+modelo.sarima_2 <- arima(eibi_e, order = c(1, 0, 0), seasonal = list(order = c(0, 1, 1), period = 7))
+
+## Visualizamos los coeficientes del autorregresivo
+coeftest(modelo.sarima_2)
+```
+Los coeficientes son significativos.
+
+
+```{r}
+## Criterio de Información de Akaike 
+modelo.sarima_2$aic
+```
+Mejoramos considerablemente el criterio de Akaike, comparado con el modelo.sarima_1
+
+```{r}
+## Para ello la inversa de las raices tienen que estar dentro del circulo de unidad
+## La función autoplot() sobre el modelo nos proporciona directamente los valores de forma visual
+autoplot(modelo.sarima_2) +
+  labs(title = "Círculo de unidad - SARIMA (1, 0, 0)(0, 1, 1)")
+```
+Observamos que las inversas de las raices caen dentro del círculo de unidad por lo tanto podemos considerar que la parte autorregresiva es estacionaria, y que la parte media móvil es invertible.
+
+Siguiente paso será obtener el correlograma de los residuos, y observar como se comporta los residuos.
+
+```{r}
+## Obtenemos el correlograma de los residuos
+res.modelo.sarima_2 = residuals(modelo.sarima_2)
+FAS_RES2 <- ggAcf(res.modelo.sarima_2, lag.max = 36, main = "Correlograma FAS: Residuos SARIMA (1, 0, 0)(0, 1, 1)")
+FAP_RES2 <- ggPacf(res.modelo.sarima_2, lag.max = 36, main = "Correlograma FAP: Residuos SARIMA (1, 0, 0)(0, 1, 1)")
+grid.arrange(FAS_RES2, FAP_RES2, nrow = 2, ncol = 1) 
+```
+Cada vez se aproximan más a ruido blanco los residuos.
+
+```{r}
+## Mostramos el espectro de los residuos, con la función que creamos
+f_residuals(modelo = modelo.sarima_2, fejer.m = 400, fejer.r = 5)
+```
+
+Observamos que los residuos todavía no toman forma de ruido blanco, habrá que seguir probando otros modelos. De todos modos vamos a relaizar un tsdiag() sobre el modelo
+
+
+```{r}
+tsdiag(object = modelo.sarima_2)
+```
+
+Observamos que los p valores del test de Ljung-Box comienzan a tener valores altos pero no todos, lo que NO nos permite rechazar la hipotesis nula de que los residuoes estan correlacionados entre ellos. Por lo consiguiente hay parte de la variablidad de la serie que todavía podría ser explicada por un modelo mejor especificado.
+
+###SARIMA (2, 0, 0)(0, 1, 1)
+
+Incrementamos el orden del auto regresivo en 2 parte regular, y lo integramos a través de una media móvil en la parte estacional.
+```{r}
+## Aplicamos el un SARIMA (2, 0, 0)(0, 1, 1)
+modelo.sarima_3 <- arima(eibi_e, order = c(2, 0, 0), seasonal = list(order = c(0, 1, 1), period = 7))
+
+## Visualizamos los coeficientes del autorregresivo
+coeftest(modelo.sarima_3)
+```
+Observamos que el autoregresivo de orden 2 no es significativo.
+
+
+```{r}
+## Criterio de Información de Akaike 
+modelo.sarima_3$aic
+```
+Observamos que el criterio de Akaike se mantiene al mismo nivel comparado con el modelo.sarima_2
+
+```{r}
+## Para ello la inversa de las raices tienen que estar dentro del circulo de unidad
+## La función autoplot() sobre el modelo nos proporciona directamente los valores de forma visual
+autoplot(modelo.sarima_3) +
+  labs(title = "Círculo de unidad - SARIMA (2, 0, 0)(0, 1, 1)")
+```
+
+Observamos que las inversas de las raices caen dentro del círculo de unidad por lo tanto podemos considerar que la parte autorregresiva es estacionaria, y que la parte media móvil es invertible.
+
+Siguiente paso será obtener el correlograma de los residuos, y observar como se comporta los residuos.
+
+```{r}
+## Obtenemos el correlograma de los residuos
+res.modelo.sarima_3 = residuals(modelo.sarima_3)
+FAS_RES3 <- ggAcf(res.modelo.sarima_3, lag.max = 36, main = "Correlograma FAS: Residuos SARIMA (2, 0, 0)(0, 1, 1)")
+FAP_RES3 <- ggPacf(res.modelo.sarima_3, lag.max = 36, main = "Correlograma FAP: Residuos SARIMA (2, 0, 0)(0, 1, 1)")
+grid.arrange(FAS_RES3, FAP_RES3, nrow = 2, ncol = 1) 
+```
+Los correlogramas no varian mucho comparado con los del modelo.sarima_2.
+
+```{r}
+## Mostramos el espectro de los residuos, con la función que creamos
+f_residuals(modelo = modelo.sarima_3, fejer.m = 200, fejer.r = 10)
+```
+Como en el modelo anterior, se aproxima mucho a ser ruido blanco el modelo.
+
+
+```{r}
+tsdiag(modelo.sarima_3)
+```
+Observamos que los p valores del test de Ljung-Box tienen valores más altos pero no todos, lo que NO nos permite rechazar la hipotesis nula de que los residuoes estan correlacionados entre ellos. Por lo consiguiente hay parte de la variablidad de la serie que todavía podría ser explicada por un modelo mejor especificado.
+
+###SARIMA (2, 0, 1)(0, 1, 1)
+
+Por último, al modelo anterior le añadimos un MA(1) en la parte regular, pasaremos a tener en la parte regular un ARMA (2,1) y en la parte estacional un SARIMA(0, 1, 1). Observaremos si mejora el criterio de Akaike, en caso de que empeore significaría que hemos sobreparamterizado y la métrica de Akaike estaría penalizando más la inclusión de nuevo parámetro que el incremento de la bondad del ajuste.
+
+```{r}
+## Aplicamos el un SARIMA (2, 0, 1)(0, 1, 1)
+modelo.sarima_4 <- arima(eibi_e, order = c(2, 0, 1), seasonal = list(order = c(0, 1, 1), period = 7))
+
+## Visualizamos los coeficientes del autorregresivo
+coeftest(modelo.sarima_4)
+```
+Los coeficientes son significativos.
+
+
+```{r}
+## Criterio de Información de Akaike 
+modelo.sarima_4$aic
+```
+Hasta ahora es el mejor valor que hemos alcanzado con el criterio de Akaike, a pesar de que es el modelo con más parámetros que voy a presentar, ya que las mejores y los intentos en conseguir que los residuos presente completamente ruido blanco no están mejorando apenas con cada nueva especificación.
+
+```{r}
+## Para ello la inversa de las raices tienen que estar dentro del circulo de unidad
+## La función autoplot() sobre el modelo nos proporciona directamente los valores de forma visual
+autoplot(modelo.sarima_4) +
+  labs(title = "Círculo de unidad - SARIMA (2, 0, 1)(0, 1, 1)")
+```
+
+Observamos que las inversas de las raices caen dentro del círculo de unidad por lo tanto podemos considerar que la parte autorregresiva es estacionaria, y que la parte media móvil es invertible.
+
+Siguiente paso será obtener el correlograma de los residuos, y observar como se comporta los residuos.
+
+```{r}
+## Obtenemos el correlograma de los residuos
+res.modelo.sarima_4 = residuals(modelo.sarima_4)
+FAS_RES4 <- ggAcf(res.modelo.sarima_4, lag.max = 36, main = "Correlograma FAS: Residuos SARIMA (2, 0, 1)(0, 1, 1)")
+FAP_RES4 <- ggPacf(res.modelo.sarima_4, lag.max = 36, main = "Correlograma FAP: Residuos SARIMA (2, 0, 1)(0, 1, 1)")
+grid.arrange(FAS_RES4, FAP_RES4, nrow = 2, ncol = 1) 
+```
+Creo que es lo máximo que podemos aproximar los correlogramas de los residuos a ruido blanco sin llegar a parámetros sobre dimiensionado y difíciles de intepretar. Creo que es un modelo aceptable, sin estar sobreparametrizado.
+
+```{r}
+## Mostramos el espectro de los residuos, con la función que creamos
+f_residuals(modelo = modelo.sarima_4, fejer.m = 400, fejer.r = 6)
+```
+
+```{r}
+tsdiag(modelo.sarima_4)
+```
+
+Finalmente nos quedaremos con el último modelo especificado, modelo.sarima_4 espcificado como un SARIMA (2, 0, 1)(0, 1, 1). Los motivos por los que creo que es el mejor representa la serie se basan en que mejoramos el através del Criterio de Akaike por lo cual no esta sobreparámetrizado comparado con el resto de modelo más simple y conseguimos aproximar bastante los residuos a un proceso de ruido blanco. Seguramente tras el tratamiento de outlier conseguiremos aproximar mejor los residuos a riudo blanco, ya que en los correlogramas algunas correlaciones quedan fueras de bandas tras especificar el que considero el mejor modelo.
+
+##Tratamiento de Outliers
+
+###Tipos de Outliers
+![Fig 1. Tipos de Outliers en Series Temporales](/Users/CarlosK/Desktop/Captura de pantalla 2018-06-30 a las 11.46.36.png)
+
+Para detectar los outliers utilizaré la función detectAO() y detectIO() de la libreria TSA, sobre el modelo modelo.sarima_4 especificado como: SARIMA (2, 0, 1)(0, 1, 1) 
+
+```{r, cache=TRUE}
+## si consideramos que hay Outliers Aditivos usaremos la función detectAO()
+outliers.aditivos <- detectAO(modelo.sarima_4, robust = F)
+## obtenemos los índices de los outliers  aditivos 
+outliers.aditivos$ind
+
+
+## si consideramos que hay Outliers debido a Innovaciones usaremos la función detectIO()
+outliers.innovaciones <- detectIO(modelo.sarima_4, robust = F)
+##obtenemos los índices  de los outliers debido a innovaciones
+outliers.innovaciones$ind
+```
+
+Hemos encontrado 45 outliers aditivos y 6 outliers del tipo innovación.
+
+Creo dos data.frame con los dos tipo de outliers que hemos detectado.
+```{r}
+## Genero variables tipo Dummie por Additive Outlier
+Dummies.AO <- data.frame(D416 = 1 * (seq(eibi_e) == 416),
+                         D423 = 1 * (seq(eibi_e) == 423),
+                         D430 = 1 * (seq(eibi_e) == 430), 
+                         D436 = 1 * (seq(eibi_e) == 436),
+                         D444 = 1 * (seq(eibi_e) == 444),
+                         D451 = 1 * (seq(eibi_e) == 451),
+                         D2873 = 1 * (seq(eibi_e) == 2873),
+                         D2880 = 1 * (seq(eibi_e) == 2880), 
+                         D2886 = 1 * (seq(eibi_e) == 2886),
+                         D2907 = 1 * (seq(eibi_e) == 2907),
+                         D2914 = 1 * (seq(eibi_e) == 2914),
+                         D2922 = 1 * (seq(eibi_e) == 2922),
+                         D2936 = 1 * (seq(eibi_e) == 2936),
+                         D2964 = 1 * (seq(eibi_e) == 2964),
+                         D2971 = 1 * (seq(eibi_e) == 2971), 
+                         D6563 = 1 * (seq(eibi_e) == 6563))
+
+## Genero variables tipo Dummie por Innovative Outlier
+Dummies.IO <- data.frame(DIO1832 = 1 * (seq(eibi_e) == 1832),
+                         DIO1887 = 1 * (seq(eibi_e) == 1887),
+                         DIO1926 = 1 * (seq(eibi_e) == 1926), 
+                         DIO2862 = 1 * (seq(eibi_e) == 2862),
+                         DIO2915 = 1 * (seq(eibi_e) == 2915),
+                         DIO3756 = 1 * (seq(eibi_e) == 3756))
+```
+
+
+
+```{r cache=TRUE}
+## Generamos el modelo SARIMAX, al cual vamos a ir quidando las variables menos significativas del modelo una a una.
+#modelo.sarimax <- arimax(eibi_e, order = c(2, 0, 1), seasonal = list(order = c (0, 1, 1), period = 7), 
+  #                       io = c(1832, 1887, 1926, 2862, 2915, 3756), xreg = Dummies.AO)
+
+## Guardamos como objeto .RData para no volver a ejecutar el algoritmo
+#save(modelo.sarimax, file = "modelo.sarimax.RData")
+
+## Cargamos el objeto RData con el modelo ya procesado previamente
+load("modelo.sarimax.RData")
+
+## Obtenemos los coeficientes de todos los Outliers
+coeftest(modelo.sarimax)
+```
+
+
+Vamos quitando los outleirs no significativos del modelo uno a uno (dejaremos los otliers que como minimo son significativos al 5%), de ese modo obtenemos el siguiente modelo modelo.sarimax_f
+```{r cache=TRUE}
+## Modelo SARIMAX quitando los outliers no significativos
+#modelo.sarimax_f <- arimax(eibi_e, order = c(2, 0, 1), seasonal = list(order = c (0, 1, 1), period = 7), 
+ #io = c(1832, 1887, 1926, 2862, 3756), xreg = Dummies.AO)
+
+##Guardamos como objeto .RData para no volver a ejecutar el algoritmo
+#save(modelo.sarimax_f, file = "modelo.sarimax_f.RData")
+
+## Cargamos el objeto RData con el modelo ya procesado previamente
+load("modelo.sarimax_f.RData")
+
+## Obtenemos los coeficientes del modelo
+coeftest(modelo.sarimax_f)
+```
+
+Obtenemos el criterio de Akaike
+```{r}
+modelo.sarimax_f$aic
+```
+Según el criterio de Akaike conseguimos mejorar con respecto a los modelos SARIMA previamente especificados.
+
+Comprobamos que las inversas de las raíces caen dentro del círculo de unidad
+```{r}
+## Para ello la inversa de las raices tienen que estar dentro del circulo de unidad
+## La función autoplot() sobre el modelo nos proporciona directamente los valores de forma visual
+autoplot(modelo.sarimax_f) +
+  labs(title = "Círculo de unidad - SARIMAX (2, 0, 1)(0, 1, 1)")
+```
+Observamos que las inversas de las raices caen dentro del círculo de unidad por lo tanto podemos considerar que la parte autorregresiva es estacionaria, y que la parte media móvil es invertible.
+
+Siguiente paso será obtener el correlograma de los residuos, y observar como se comporta los residuos.
+
+```{r}
+## Obtenemos el correlograma de los residuos
+res.modelo.sarimax_f = residuals(modelo.sarimax_f)
+FAS_RES5 <- ggAcf(res.modelo.sarimax_f, lag.max = 36, main = "Correlograma FAS: Residuos SARIMAX (2, 0, 1)(0, 1, 1)")
+FAP_RES5 <- ggPacf(res.modelo.sarimax_f, lag.max = 36, main = "Correlograma FAP: Residuos SARIMAX (2, 0, 1)(0, 1, 1)")
+grid.arrange(FAS_RES5, FAP_RES5, nrow = 2, ncol = 1) 
+```
+
+Observamos que los correlogramas de los residuos casi completamente ruido blanco, casi hemos conseguido eliminar completamente el ruido en la serie.
+
+```{r}
+## Mostramos el espectro de los residuos, con la función que creamos
+f_residuals(modelo = modelo.sarimax_f, fejer.m = 400, fejer.r = 6)
+```
+
+```{r}
+tsdiag(modelo.sarimax_f)
+```
+Observamos que los p valores de estadístico de Ljung-Box dejan de ser significativos con un lag cada vez más alto comparado con el resto de modelos, lo cual nos dice que hemos conseguido mejorar la especificación del modelo con el tratamiento de outliers.
+
+
+###Modelo SARIMAX usando los Innovative Outlier como Aditive Outliers
+
+Voy a probar que pasa si añadimos los innovative outliers como si fuesen aditive outliers, es simplemente por curiosidad.
+```{r cache=TRUE}
+## Modelo SARIMAX usando los Innovative Outlier como Aditive Outliers
+modelo.sarimax_IO <- arimax(eibi_e, order = c(2, 0, 1), seasonal = list(order = c (0, 1, 1), period = 7), xreg = Dummies.IO)
+
+##Guardamos como objeto .RData para no volver a ejecutar el algoritmo
+#save(modelo.sarimax_IO, file = "modelo.sarimax_IO.RData")
+
+## Cargamos el objeto RData con el modelo ya procesado previamente
+load("modelo.sarimax_IO.RData")
+
+## Obtenemos los coeficientes del modelo
+coeftest(modelo.sarimax_IO)
+```
+
+Todos los coeficientes son significativos, inclusive ar1 que en el modelo.sarimax_f salía no significativo.
+
+Obtenemos el criterio de Akaike.
+```{r}
+modelo.sarimax_IO$aic
+```
+Según el criterio de Akaike conseguimos mejorar con respecto a los modelos SARIMAX previamente especificado vemos que es un poco peor, el modelo con todos los outliers especidicados tiene un criterio de Akaike mucho mejor que este modelo, de todo modelos vamos a visualizar los residuos como se comportan de este modo.
+
+Comprobamos que las inversas de las raíces caen dentro del círculo de unidad
+```{r}
+## Para ello la inversa de las raices tienen que estar dentro del circulo de unidad
+## La función autoplot() sobre el modelo nos proporciona directamente los valores de forma visual
+autoplot(modelo.sarimax_IO) +
+  labs(title = "Círculo de unidad - SARIMAX_IO (2, 0, 1)(0, 1, 1)")
+```
+Las inversas de las raices caen dentro del círculo de unidad.
+
+```{r}
+## Obtenemos el correlograma de los residuos
+res.modelo.sarimax_IO = residuals(modelo.sarimax_IO)
+FAS_RES6 <- ggAcf(res.modelo.sarimax_IO, lag.max = 36, main = "Correlograma FAS: Residuos SARIMAX_IO (2, 0, 1)(0, 1, 1)")
+FAP_RES6 <- ggPacf(res.modelo.sarimax_IO, lag.max = 36, main = "Correlograma FAP: Residuos SARIMAX_IO (2, 0, 1)(0, 1, 1)")
+grid.arrange(FAS_RES6, FAP_RES6, nrow = 2, ncol = 1) 
+```
+
+Los residuos se comportan bastante bien con el modelo sarimax utilizando los innovative outlies como si fuesen aditive outliers.
+
+```{r}
+tsdiag(modelo.sarimax_IO)
+```
+
+###Outliers con la libreria tsoutliers
+
+Otra forma de visualizar los outliers es con la función tso() de la libreria tsoutliers. REF: https://jalobe.com/doc/tsoutliers.pdf
+
+Ventajas de la libreria tsoutliers: detecta automáticamente todos los tipo de outliers incluido, los Temporly Change (TC), Level Shift (LS), Seasonal Level Shift (SLS), Additive Outliers (AO) y Innovative Outliers (IO).
+
+Desventaja: No he conseguido implementar mi modelo SARIMA (2,0,1)(0, 1, 1) sobre los datos diarios, continuamente llegamos al máximo de iteraciones en el modelo, a parte del coste computacional que supone tratar los datos como diarios y procesarlos por este tipo de detección de outliers. La pruba que he realizado se puede ver acontinuación:
+```{r}
+## Con modelo SARIMA debría ser así, pero se ve que al tener datos diarios no funcina bien,
+## lo he probado con otras series mensuales y si que funciona. Supongo que con series diarias
+## el algoritmo no esta del todo optimizado y tiene que asumir un coste computacional extremo.
+
+#outliers_eibi_tso_sarima <- tso(eibi_e, types = c("TC", "AO", "LS", "IO", "SLS"), tsmethod = "arima", 
+ #                        args.tsmethod = list(order = c(2, 0, 1), seasonal = list(order = c(0, 1, 1), period = 7)))
+```
+
+
+Por este motivo voy a dejar que autoprocese un modelo con un auto.arma que tiene en el interior del modelo.
+```{r cache=TRUE}
+## Analizando todo el tipo de outliers, sobre un modelo ARMA(2,2)
+# outliers_eibi_tso <- tso(eibi_e, types = c("TC", "AO", "LS", "IO", "SLS"))
+
+## Lo guardo como objeto RData ya que tarda mucho en ejecutar el algoritmo
+#save(outliers_eibi_tso, file = "outliers_eibi_tso.RData")
+
+## Cargamos el objeto RData previamente ejecutado
+load("outliers_eibi_tso.RData")
+
+## Obtenemos los outliers que ha detectado el proceso sobre un modelo ARMA(2,2 )
+outliers_eibi_tso$outliers
+```
+Las fechas en las que detecta los outliers son muy significtivas económicamente, en el año 2005 previo a la crisis financiera aplicando un Level Shift y un Temporaly Change.
+
+Visualizamos el plot que nos ofrece la libreria tsoutliers y los efectos outlier:
+```{r cache=TRUE}
+##Visualizamos los outliers y los efectos causados por estos outliers
+plot(outliers_eibi_tso)
+```
+
+Analizamos los resultado de este modelo obtenido con la libreria tsoutlier
+```{r}
+## Obtenemos el correlograma de los residuos
+res.modelo.outliers_tso = residuals(outliers_eibi_tso$fit)
+FAS_RES7 <- ggAcf(res.modelo.outliers_tso, lag.max = 36, main = "Correlograma FAS: Residuos TSO ARMA(2,2)")
+FAP_RES7 <- ggPacf(res.modelo.outliers_tso, lag.max = 36, main = "Correlograma FAP: Residuos TSO ARMA(2,2)")
+grid.arrange(FAS_RES7, FAP_RES7, nrow = 2, ncol = 1) 
+```
+
+Se observa claramente que el modelo no es bueno debido a que no nos recoge ningún caso la estacionalidad.
+
+```{r}
+tsdiag(outliers_eibi_tso$fit)
+```
+
+La mayorís de los stadísticos de Ljung-Box son significativos por lo cual no es para nada un buen modelo. Por lo menos hemos visto como funciona esta herramienta que ofrece la librería tsoutliers y que para datos más simples puede ser muy útil para el tratamiento de outliers.
+
+##Modelos BATS y TBATS
+
+###BATS
+
+El modelo BAT se utiliza mucho en finanzas donde se manejan datos con altas frecuéncias y volatilidades, pertenece al grupo de técnicas dinámicas con especificaciones del tipo bayesianas, para su aplicación a series temporales se suele utilizar la trasnformación de Box-Cox, utilizando esta transformación nos permetirá modelizar hasta K factores estacionales distintos en el proceso de modelización de la serie.
+
+Las siglas significan:
+
+  * B para las transformaciones de Box-Cox
+  * A para los errores ARMA
+  * T para la tendencia
+  *S para la estacionalidad
+
+El bats lo aplicaremos sobre la descomposición de la serie original, en escala logarítimica y fijando dos efectos estacionales periodo 7 y periodo 365.25.
+
+```{r}
+## Descomponemos la serie
+eibi.bats <- msts(eibi, seasonal.periods = c(7, 365.25))
+
+## Aplicamos el modelo bat sobre , le especificamos que nos aplique la trasnformación box-cox explicitamente
+#model.bats <- bats(log(eibi.bats), use.box.cox = TRUE)
+
+## Como tarda mucho en ejecutar el algorítmo lo guardo como objeto RData
+#save(model.bats, file = "model.bats.RData")
+
+## Cargamos el objeto RData con los resultados del BATS previamente ejecutado
+load("model.bats.RData")
+```
+Parámetros que ha utilizado el BATS:
+
+BATS(1, {0,0}, 0.857, {7,365})
+
+Call: bats(y = log(eibi.bats), use.box.cox = TRUE)
+
+Parameters
+  Lambda: 1
+  Alpha: 0.9595348
+  Beta: -0.1250679
+  Damping Parameter: 0.857481
+  Gamma Values: 0.0652486 -0.03866572
+
+Visualizamos el plot del modelo BATS:
+```{r}
+## Plot modelo.bats:
+plot(model.bats)
+```
+
+```{r, warning=FALSE}
+## Obtenemos el correlograma de los residuos
+res.modelo.bats = residuals(model.bats)
+FAS_RES8 <- ggAcf(res.modelo.bats, lag.max = 36, main = "Correlograma FAS: Residuos BATS")
+FAP_RES8 <- ggPacf(res.modelo.bats, lag.max = 36, main = "Correlograma FAP: Residuos BATS")
+grid.arrange(FAS_RES8, FAP_RES8, nrow = 2, ncol = 1) 
+```
+En el correlogram se observa que apesar de que pueda parecer que no representa bien el ruido blanco, es un modelo que es capaz de ajustar la serie teniendo en cuenta esos efectos estacionales sin problemas.
+
+```{r}
+tsdisplay(res.modelo.bats)
+```
+
+```{r}
+f_residuals(model.bats, fejer.m = 400, fejer.r = 6)
+```
+
+```{r}
+## Ajustamos el modelo
+eibi.bats.fit <- fitted(model.bats)
+
+## Graficamos el ajuste sobre los datos originales 
+ts.plot(log(eibi.bats), eibi.bats.fit, col = 1:2, ylab = "LOG(millones KW / H)",
+        main = "Serie ajustada por BATS")
+```
+
+Observamos que es un ajuste muy bueno, incluso recoge la variabilidad diaria en gran medida.
+
+Probamos con la predicción:
+```{r}
+#forecast.model.bats <- forecast(model.bats, h = 365)
+
+## Guardamos el forecast.bats como objeto RData
+#save(forecast.model.bats, file = "forecast.model.bats.RData")
+
+## Cargamos el forecast previamente calculado
+load("forecast.model.bats.RData")
+
+## Plot Forecast del BATS a un año vista
+plot(forecast.model.bats, ylab = "LOG(millones KW / H)")
+```
+
+
+###TBATS 
+
+El modelo TBATS es la generalización del modelo BATS aplicado a series que puden tener múltiples estacionalidades, es el caso de nuestra serie y seguramente obtendetrmos mucho mejor resultado que el BATS y el resto de Modelos, además es un acrónimo que denota las características principales del TBATS:
+
+  * T para regresores trigonométricos para modelar múltiples estaciones
+  * B para las transformaciones de Box-Cox
+  * A para los errores ARMA
+  * T para la tendencia
+  * S para la estacionalidad
+
+
+```{r}
+## Descomponemos la serie
+eibi.Tbats <- msts(eibi, seasonal.periods = c(7, 365.25))
+
+## Aplicamos el modelo TBATS sobre , le especificamos que nos aplique la trasnformación box-cox explicitamente
+#model.Tbats <- tbats(log(eibi.Tbats), use.box.cox = TRUE)
+
+## Como tarda mucho en ejecutar el algorítmo lo guardo como objeto RData
+#save(model.Tbats, file = "model.Tbats.RData")
+
+## Cargamos el objeto RData con los resultados del BATS previamente ejecutado
+load("model.Tbats.RData")
+
+plot(model.Tbats)
+```
+
+```{r, warning=FALSE}
+## Obtenemos el correlograma de los residuos
+res.modelo.Tbats = residuals(model.Tbats)
+FAS_RES9 <- ggAcf(res.modelo.Tbats, lag.max = 36, main = "Correlograma FAS: Residuos TBATS")
+FAP_RES9 <- ggPacf(res.modelo.Tbats, lag.max = 36, main = "Correlograma FAP: Residuos TBATS")
+grid.arrange(FAS_RES9, FAP_RES9, nrow = 2, ncol = 1) 
+```
+
+
+```{r}
+tsdisplay(res.modelo.Tbats)
+```
+
+```{r}
+f_residuals(model.Tbats, fejer.m = 400, fejer.r = 6)
+```
+
+```{r}
+## Ajustamos el modelo
+eibi.Tbats.fit <- fitted(model.Tbats)
+
+## Graficamos el ajuste sobre los datos originales 
+ts.plot(log(eibi.Tbats), eibi.Tbats.fit, col = 1:2, ylab = "LOG(millones KW / H)",
+        main = "Serie ajustada por TBATS")
+```
+Observamos que es un ajuste muy bueno tambiés, incluso recoge la variabilidad diaria en gran medida como lo hace el BAT, será diífil escoger entre estos dos modelo sin analizar previamente los errores de predicción.
+
+Probamos con la predicción:
+```{r}
+#forecast.model.Tbats <- forecast(model.Tbats, h = 365)
+
+## Guardamos el forecast.bats como objeto RData
+#save(forecast.model.Tbats, file = "forecast.model.Tbats.RData")
+
+## Cargamos el forecast previamente calculado
+load("forecast.model.Tbats.RData")
+
+## Plot Forecast del BATS a un año vista
+plot(forecast.model.Tbats, ylab = "LOG(millones KW / H)")
+```
+Consigue predecir la parte dairia, pero con valores muchos más amplios y menos ajustados que el BATS.
+
+### Comparación BATS vs TBATS
+
+Primero representamos el escalado logarítmico y posteriormente lo representaremos con un escalado original.
+```{r}
+## Generamos fechas para los datos eibi.2017 (Datos reservados para testear)
+date.test <- data.frame(time = seq(as.Date('2017-01-01'), by = 'days', length = 365))
+
+## Organizamos los datos en un data frame structurado
+data.bats.Tbats <- data.frame(date.test, log(eibi.2017), forecast.model.bats$mean, forecast.model.Tbats$mean)
+names(data.bats.Tbats) <- c("Date", "Serie Original", "Forecast BATS", "Forecast TBATS")
+#head(data.bats.Tbats)
+
+## Visualizamos los datos en un plot
+ggplot(data = data.bats.Tbats, aes(x=data.bats.Tbats$Date, colour = Series)) +
+  geom_line(aes(y = data.bats.Tbats$`Serie Original`, colour = "Original")) +
+  geom_line(aes(y = data.bats.Tbats$`Forecast BATS`, colour = "Forecast BATS")) +
+  geom_line(aes(y = data.bats.Tbats$`Forecast TBATS`, colour = "Forecast TBATS")) +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  scale_colour_manual(values = c("blue", "red", "black")) +
+  labs(title = "Forecast BATS vs TBATS",
+       subtitle = "Escalado logarítmico |  Periodo: 01/01/2017 a 31/12/2017") +
+  scale_y_continuous() +
+  xlab("Periodo") +
+  ylab("LOG(millones KW / H)") +
+  labs(fill = "Series:") 
+```
+
+```{r}
+## Organizamos los datos en un data frame structurado
+data.bats.Tbats.original <- data.frame(date.test, eibi.2017, exp(forecast.model.bats$mean), exp(forecast.model.Tbats$mean))
+names(data.bats.Tbats.original) <- c("Date", "Serie Original", "Forecast BATS", "Forecast TBATS")
+#head(data.bats.Tbats.original)
+
+## Visualizamos los datos en un plot
+ggplot(data = data.bats.Tbats.original, aes(x=data.bats.Tbats$Date, colour = Series)) +
+  geom_line(aes(y = data.bats.Tbats.original$`Serie Original`, colour = "Original")) +
+  geom_line(aes(y = data.bats.Tbats.original$`Forecast BATS`, colour = "Forecast BATS")) +
+  geom_line(aes(y = data.bats.Tbats.original$`Forecast TBATS`, colour = "Forecast TBATS")) +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  scale_colour_manual(values = c("blue", "red", "black")) +
+  labs(title = "Forecast BATS vs TBATS",
+       subtitle = "Escalado original  |  Periodo: 01/01/2017 a 31/12/2017") +
+  scale_y_continuous() +
+  xlab("Periodo") +
+  ylab("millones KW / H") +
+  labs(fill = "Series:") 
+```
+
+En los dos gráficos visualizamos que los dos forecast son muy parecidos, pero observamos que el BATS tiene más varianza y realiza un ajuste más amplio realizando predicción que marcan bien los pico pero con mas riesgo a desviarse. el TBATS en cambio parece predecir de forma más conservadora y con menos varianza ajustandose más a la media de la serie original. Dejaré que la elección la tome los datos, es decir, el que menor error cometa con respecto a la serie original.
+
+## Filtro de Kalman
+
+### Kalman Filter - Dummies
+```{r}
+eibi_e.ts.Kalman <- ts(data = eibi_e, start = c(1999, 1), frequency = 365.25)
+
+model.KalmanFilter.D <- SSModel(eibi_e.ts.Kalman ~ 
+                                  SSMtrend(degree = 2, Q = list(matrix(NA), matrix(NA))) + 
+                                  SSMseasonal(period = 7, sea.type = "dummy", Q = NA), H = NA)
+
+eibi.Kalman.D.fit <- fitSSM(model.KalmanFilter.D, inits = c(0, 0, 0, 0, 0, 0, 0, 0, 0), method = "BFGS")
+output.KalmanFilter.D <- KFS(eibi.Kalman.D.fit$model)
+output.KalmanFilter.D
+
+```
+
+
+```{r}
+## Obtenemos el correlograma de los residuos
+res.modelo.Kalman.D <- ts(residuals(output.KalmanFilter.D), start = c(1999, 1), frequency = 365.25)
+FAS_RES10 <- ggAcf(res.modelo.Kalman.D, lag.max = 36, main = "Correlograma FAS: Residuos TBATS")
+FAP_RES10 <- ggPacf(res.modelo.Kalman.D, lag.max = 36, main = "Correlograma FAP: Residuos TBATS")
+grid.arrange(FAS_RES10, FAP_RES10, nrow = 2, ncol = 1) 
+```
+
+```{r}
+tsdisplay(res.modelo.Kalman.D)
+```
+
+```{r}
+f_residuals(output.KalmanFilter.D, fejer.m = 200, fejer.r = 10)
+```
+
+```{r}
+## Graficamos el ajuste sobre los datos originales 
+ts.plot(eibi_e, output.KalmanFilter.D$a[,1] + output.KalmanFilter.D$a[,3], 
+        col = 1:2, ylab = "Valores transformados",
+        main = "Serie ajustada por Kalman Filter by Dummies")
+```
+
+Probamos con la predicción:
+```{r}
+## Para la predicción necesitamos
+H.KalmanFilterD = eibi.Kalman.D.fit$model$H[1, 1, 1]
+Q.KalmanFilterD = matrix(eibi.Kalman.D.fit$model$Q,3,3)
+#print(eibi.Kalman.D.fit$model$H)
+
+## Especificamos los parametros de la predicción
+forecast.model.KalmanFilter.D <- SSModel(eibi_e ~
+                                           SSMtrend(degree = 2, 
+                                                    Q = list(matrix(Q.KalmanFilterD[1,1]), matrix(Q.KalmanFilterD[2,2]))) + 
+                                           SSMseasonal(period = 7, 
+                                                       sea.type = "trigonometric", 
+                                                       Q = Q.KalmanFilterD[3,3]), 
+                                                       H = H.KalmanFilterD)
+
+## Realizamos el forecast sobre el modelo especificado
+# forecast.KalmanFilter.D <- predict(forecast.model.KalmanFilter.D, n.ahead = 365)
+
+is.SSModel(forecast.model.KalmanFilter.D)
+
+## No me funciona bien el predict me da el siguiente error:
+# Error in is.SSModel(model, na.check = TRUE, return.logical = FALSE) : 
+# Model is not a proper object of class 'SSModel'. Check dimensions of system matrices.
+```
+No me funciona bien el predict me da el siguiente error: Error in is.SSModel(model, na.check = TRUE, return.logical = FALSE) : Model is not a proper object of class 'SSModel'. Check dimensions of system matrices.
+
+Creo que tengo un problema de compatibilidad con la función predict de otra librería y no me deja aplicarlo a un objeto tipo SSModel, apesar de que si que es un SSModel lo que especifico. He probado hacerlo mediante el método trigonométrico pero me ocurre el mismo error. Es una lástima que no pueda presentar los resultado de la predicción, tras haber dedicado mucho tiempo en descubrir porque no funciona la función predict con el filtro de Kalman.
+
+
+#Predicciones
+
+## Modelos SARIMA
+
+### Series ajustadas 
+```{r}
+## Generamos los ajustes sobre la serie de cada modelo SARIMA
+eibi.sarima_1.fit <- fitted.Arima(modelo.sarima_1)
+eibi.sarima_2.fit <- fitted.Arima(modelo.sarima_2)
+eibi.sarima_3.fit <- fitted.Arima(modelo.sarima_3)
+eibi.sarima_4.fit <- fitted.Arima(modelo.sarima_4)
+eibi.sarimax.fit <- fitted.Arima(modelo.sarimax)
+eibi.sarimax_f.fit <- fitted.Arima(modelo.sarimax_f)
+eibi.sarimax_IO.fit <- fitted.Arima(modelo.sarimax_IO)
+
+## Generamos un data frame con los datos organizados
+data.sarima.fit <- data.frame(fechas, eibi_e, eibi.sarima_1.fit, eibi.sarima_2.fit, 
+                              eibi.sarima_3.fit, eibi.sarima_4.fit, eibi.sarimax.fit,
+                              eibi.sarimax_f.fit, eibi.sarimax_IO.fit)
+names(data.sarima.fit) <- c("Date", "Original", "SARIMA1", "SARIMA2", "SARIMA3", "SARIMA4",
+                            "SARIMAX", "SARIMAXF", "SARIMAXIO")
+
+## Generamos el plot con las series ajustadas por los modelos
+ggplot(data = data.sarima.fit, aes(x =data.sarima.fit$Date, colour=Series)) +
+  geom_line(aes(y=data.sarima.fit$Original, colour = "Original")) +
+  geom_line(aes(y = data.sarima.fit$SARIMA1, colour = "SARIMA 1")) +
+  geom_line(aes(y = data.sarima.fit$SARIMA2, colour = "SARIMA 2")) +
+  geom_line(aes(y = data.sarima.fit$SARIMA3, colour = "SARIMA 3")) +
+  geom_line(aes(y = data.sarima.fit$SARIMA4, colour = "SARIMA 4")) +
+  geom_line(aes(y = data.sarima.fit$SARIMAX, colour = "SARIMAX")) +
+  geom_line(aes(y = data.sarima.fit$SARIMAXF, colour = "SARIMAX F")) +
+  geom_line(aes(y = data.sarima.fit$SARIMAXIO, colour = "SARIMAX IO")) +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  scale_colour_manual(values = 1:8) +
+  labs(title = "Serie original vs Modelos SARIMA",
+        subtitle = "Serie Transformada  |  Periodo: 01/01/1999 a 31/12/2016") +
+  xlab("Periodo") +
+  scale_y_continuous() +
+  ylab("valores") +
+  labs(fill = "Series:") 
+
+```
+Es un gráfico un poco enrevesado, pero podemos anular algunas lineas del código e ir visualizando los disitintod modelos comparandolo entre ellos y viendo la serie ajustada por cada uno de los modelos de interés que hemos estimado. 
+
+LEYENDA:
+
+  * Original: Serie Transformada
+  * SARIMA 1: SARIMA (1, 0, 0)(0, 1, 0)
+  * SARIMA 2: SARIMA (1, 0, 0)(0, 1, 1)
+  * SARIMA 3: SARIMA (2, 0, 0)(0, 1, 1)
+  * SARIMA 4: SARIMA (2, 0, 1)(0, 1, 1)
+  * SARIMAX: SARIMAX (2, 0, 1)(0, 1, 1) con todo los outliers
+  * SARIMAX F: SARIMAX (2, 0, 1)(0, 1, 1) solo outliers significativos
+  * SARIMAX IO: SARIMAX (2, 0, 1)(0, 1, 1) usando Innovative Outliers como si fuesen Additive Outliers
+  
+###Predicción Modelos SARIMA
+```{r}
+## Realizamos las predicciones sobre cada modelo
+forecast.model.sarima_1 <- arimapred(eibi.sarima_1.fit, n.ahead = 365)
+forecast.model.sarima_2 <- arimapred(eibi.sarima_2.fit, n.ahead = 365)
+forecast.model.sarima_3 <- arimapred(eibi.sarima_3.fit, n.ahead = 365)
+forecast.model.sarima_4 <- arimapred(eibi.sarima_4.fit, n.ahead = 365)
+forecast.model.sarimax <- arimapred(eibi.sarimax.fit, n.ahead = 365)
+forecast.model.sarimax_f <- arimapred(eibi.sarimax_f.fit, n.ahead = 365)
+forecast.model.sarimax_IO <- arimapred(eibi.sarimax_IO.fit, n.ahead = 365)
+
+## Transformamos la serie test para comparar con las predicciones
+## Proceso basado en las funciones de Tomás del Barrio
+t.2017 = seq(1, nrow(as.matrix(eibi.2017)))
+det_seas.2017 = cos(0 * t)
+
+## Bucle tiene que ir hasta 182 días (365/2) además hay que añadir la frcuencia PI 
+for (j in 1:182) {det_seas.2017 = cbind(det_seas.2017, cos(2 * pi * t * j / 365), sin(2 * pi * t * j / 365))} 
+
+## Creo que sería correcto añadir un término cuadrático
+exo1.2017 <- cbind(det_seas.2017, t, t^2)
+end1.2017 <- log(eibi.2017)
+
+## Los residuos son:
+t = seq(1, nrow(as.matrix(eibi.serie)))
+det_seas=cos(0*t)
+for (j in 1:182) {det_seas = cbind(det_seas, cos(2 * pi * t * j / 365), sin( 2 * pi * t * j / 365))}
+exo11 <- cbind(det_seas, t, t^2)
+exo1_f <- exo11[(6940-365+1):6940, ]
+ff_seas <- array(0,365)
+for (i in 1:365){
+ff_seas[i] = exo1_f[i,] %*% rho
+}
+
+forecast.sarima_1 <- ff_seas + forecast.model.sarima_1
+forecast.sarima_2 <- ff_seas + forecast.model.sarima_2
+forecast.sarima_3 <- ff_seas + forecast.model.sarima_3
+forecast.sarima_4 <- ff_seas + forecast.model.sarima_4
+forecast.sarimax <- ff_seas + forecast.model.sarimax
+forecast.sarimax_f <- ff_seas + forecast.model.sarimax_f
+forecast.sarimax_IO <- ff_seas + forecast.model.sarimax_f
+```
+
+Visualizamsos las predicciones en un gráfico:
+```{r}
+## Organizamos los datos en un data frame structurado
+data.forecast.sarima <- data.frame(date.test, log(eibi.2017), forecast.sarima_1, forecast.sarima_2, 
+                                   forecast.sarima_3, forecast.sarima_4,
+                                   forecast.sarimax, forecast.sarimax_f,
+                                   forecast.sarimax_IO)
+names(data.forecast.sarima) <- c("Date", "Serie Original", "F.SARIMA1", "F.SARIMA2", "F.SARIMA3",
+                                  "F.SARIMA4", "F.SARIMAX", "F.SARIMAXF", "F.SARIMAXIO")
+#head(data.forecast.sarima)
+
+## Visualizamos los datos en un plot
+ggplot(data = data.forecast.sarima, aes(x = data.forecast.sarima$Date, colour = Series)) +
+  geom_line(aes(y = data.forecast.sarima$`Serie Original`, colour = "Original")) +
+  geom_line(aes(y = data.forecast.sarima$F.SARIMA1, colour = "Forecast SARIMA 1")) +
+  geom_line(aes(y = data.forecast.sarima$F.SARIMA2, colour = "Forecast SARIMA 2")) +
+  geom_line(aes(y = data.forecast.sarima$F.SARIMA3, colour = "Forecast SARIMA 3")) +
+  geom_line(aes(y = data.forecast.sarima$F.SARIMA4, colour = "Forecast SARIMA 4")) +
+  geom_line(aes(y = data.forecast.sarima$F.SARIMAX, colour = "Forecast SARIMAX")) +
+  geom_line(aes(y = data.forecast.sarima$F.SARIMAXF, colour = "Forecast SARIMAX F")) +
+  geom_line(aes(y = data.forecast.sarima$F.SARIMAXIO, colour = "Forecast SARIMAX IO")) +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  scale_colour_manual(values = 1:8) +
+  labs(title = "Forecast SARIMA",
+       subtitle = "Serie Transformada  |  Periodo: 01/01/2017 a 31/12/2017") +
+  scale_y_continuous() +
+  xlab("Periodo") +
+  ylab("LOG(millones KW / H)") +
+  labs(fill = "Series:") 
+```
+
+
+## Modelos BATS y TBATS
+
+```{r}
+## Generamos fechas para los datos eibi.2017 (Datos reservados para testear)
+date.test <- data.frame(time = seq(as.Date('2017-01-01'), by = 'days', length = 365))
+
+## Organizamos los datos en un data frame structurado
+data.bats.Tbats <- data.frame(date.test, log(eibi.2017), forecast.model.bats$mean, forecast.model.Tbats$mean)
+names(data.bats.Tbats) <- c("Date", "Serie Original", "Forecast BATS", "Forecast TBATS")
+#head(data.bats.Tbats)
+
+## Visualizamos los datos en un plot
+ggplot(data = data.bats.Tbats, aes(x=data.bats.Tbats$Date, colour = Series)) +
+  geom_line(aes(y = data.bats.Tbats$`Serie Original`, colour = "Original")) +
+  geom_line(aes(y = data.bats.Tbats$`Forecast BATS`, colour = "Forecast BATS")) +
+  geom_line(aes(y = data.bats.Tbats$`Forecast TBATS`, colour = "Forecast TBATS")) +
+  theme(axis.title = element_text(face = "bold.italic", size = "10", color = "black")) +
+  scale_colour_manual(values = c("blue", "red", "black")) +
+  labs(title = "Forecast BATS vs TBATS",
+       subtitle = "Escalado logarítmico |  Periodo: 01/01/2017 a 31/12/2017") +
+  scale_y_continuous() +
+  xlab("Periodo") +
+  ylab("LOG(millones KW / H)") +
+  labs(fill = "Series:") 
+```
+
+#Resultados
+
+En este apartado calculareromos las diversas medidias de error producidos al predecir el consumo eléctrico de las Islas Baleares a un año vista. Para ello me basaré en el Root Mean Square Error (RMSE). Aunque calcularé otros por si nos puede dar alguna persepctiva mejor para valorar algun modelo entre ellos.
+
+```{r}
+## Errores de predicción para el modelo SARIMA (1, 0, 0)(0, 1, 0)
+MSE_sarima_1 <- Metrics::mse(as.numeric(forecast.sarima_1), as.numeric(log(eibi.2017)))
+RMSE_sarima_1 <- Metrics::rmse(as.numeric(forecast.sarima_1), as.numeric(log(eibi.2017)))
+MAE_sarima_1 <- Metrics::mae(as.numeric(forecast.sarima_1), as.numeric(log(eibi.2017)))
+MAPE_sarima_1 <- Metrics::mape(as.numeric(forecast.sarima_1), as.numeric(log(eibi.2017)))
+MASE_sarima_1 <- Metrics::mase(as.numeric(forecast.sarima_1), as.numeric(log(eibi.2017)))
+
+## Errores de predicción para el modelo SARIMA (1, 0, 0)(0, 1, 1)
+MSE_sarima_2 <- Metrics::mse(as.numeric(forecast.sarima_2), as.numeric(log(eibi.2017)))
+RMSE_sarima_2 <- Metrics::rmse(as.numeric(forecast.sarima_2), as.numeric(log(eibi.2017)))
+MAE_sarima_2 <- Metrics::mae(as.numeric(forecast.sarima_2), as.numeric(log(eibi.2017)))
+MAPE_sarima_2 <- Metrics::mape(as.numeric(forecast.sarima_2), as.numeric(log(eibi.2017)))
+MASE_sarima_2 <- Metrics::mase(as.numeric(forecast.sarima_2), as.numeric(log(eibi.2017)))
+
+## Errores de predicción para el modelo SARIMA (2, 0, 0)(0, 1, 1)
+MSE_sarima_3 <- Metrics::mse(as.numeric(forecast.sarima_3), as.numeric(log(eibi.2017)))
+RMSE_sarima_3 <- Metrics::rmse(as.numeric(forecast.sarima_3), as.numeric(log(eibi.2017)))
+MAE_sarima_3 <- Metrics::mae(as.numeric(forecast.sarima_3), as.numeric(log(eibi.2017)))
+MAPE_sarima_3 <- Metrics::mape(as.numeric(forecast.sarima_3), as.numeric(log(eibi.2017)))
+MASE_sarima_3 <- Metrics::mase(as.numeric(forecast.sarima_3), as.numeric(log(eibi.2017)))
+
+## Errores de predicción para el modelo SARIMA (2, 0, 1)(0, 1, 1)
+MSE_sarima_4 <- Metrics::mse(as.numeric(forecast.sarima_4), as.numeric(log(eibi.2017)))
+RMSE_sarima_4 <- Metrics::rmse(as.numeric(forecast.sarima_4), as.numeric(log(eibi.2017)))
+MAE_sarima_4 <- Metrics::mae(as.numeric(forecast.sarima_4), as.numeric(log(eibi.2017)))
+MAPE_sarima_4 <- Metrics::mape(as.numeric(forecast.sarima_4), as.numeric(log(eibi.2017)))
+MASE_sarima_4 <- Metrics::mase(as.numeric(forecast.sarima_4), as.numeric(log(eibi.2017)))
+
+## Errores de predicción para el modelo SARIMAX (2, 0, 1)(0, 1, 1) con todo los outliers
+MSE_sarimax <- Metrics::mse(as.numeric(forecast.sarimax), as.numeric(log(eibi.2017)))
+RMSE_sarimax <- Metrics::rmse(as.numeric(forecast.sarimax), as.numeric(log(eibi.2017)))
+MAE_sarimax <- Metrics::mae(as.numeric(forecast.sarimax), as.numeric(log(eibi.2017)))
+MAPE_sarimax <- Metrics::mape(as.numeric(forecast.sarimax), as.numeric(log(eibi.2017)))
+MASE_sarimax <- Metrics::mase(as.numeric(forecast.sarimax), as.numeric(log(eibi.2017)))
+
+## Errores de predicción para el modelo SARIMAX (2, 0, 1)(0, 1, 1) solo outliers significativos
+MSE_sarimax_f <- Metrics::mse(as.numeric(forecast.sarimax_f), as.numeric(log(eibi.2017)))
+RMSE_sarimax_f <- Metrics::rmse(as.numeric(forecast.sarimax_f), as.numeric(log(eibi.2017)))
+MAE_sarimax_f <- Metrics::mae(as.numeric(forecast.sarimax_f), as.numeric(log(eibi.2017)))
+MAPE_sarimax_f <- Metrics::mape(as.numeric(forecast.sarimax_f), as.numeric(log(eibi.2017)))
+MASE_sarimax_f <- Metrics::mase(as.numeric(forecast.sarimax_f), as.numeric(log(eibi.2017)))
+
+## Errores de predicción para el modelo SARIMAX (2, 0, 1)(0, 1, 1)
+MSE_sarimax_IO <- Metrics::mse(as.numeric(forecast.sarimax_IO), as.numeric(log(eibi.2017)))
+RMSE_sarimax_IO <- Metrics::rmse(as.numeric(forecast.sarimax_IO), as.numeric(log(eibi.2017)))
+MAE_sarimax_IO <- Metrics::mae(as.numeric(forecast.sarimax_IO), as.numeric(log(eibi.2017)))
+MAPE_sarimax_IO <- Metrics::mape(as.numeric(forecast.sarimax_IO), as.numeric(log(eibi.2017)))
+MASE_sarimax_IO <- Metrics::mase(as.numeric(forecast.sarimax_IO), as.numeric(log(eibi.2017)))
+
+
+## Errores de predicción para el modelo BATS
+MSE_bats <- Metrics::mse(as.numeric(forecast.model.bats$mean), as.numeric(log(eibi.2017)))
+RMSE_bats <- Metrics::rmse(as.numeric(forecast.model.bats$mean), as.numeric(log(eibi.2017)))
+MAE_bats <- Metrics::mae(as.numeric(forecast.model.bats$mean), as.numeric(log(eibi.2017)))
+MAPE_bats <- Metrics::mape(as.numeric(forecast.model.bats$mean), as.numeric(log(eibi.2017)))
+MASE_bats <- Metrics::mase(as.numeric(forecast.model.bats$mean), as.numeric(log(eibi.2017)))
+
+## Errores de predicción para el modelo TBATS
+MSE_Tbats <- Metrics::mse(as.numeric(forecast.model.Tbats$mean), as.numeric(log(eibi.2017)))
+RMSE_Tbats <- Metrics::rmse(as.numeric(forecast.model.Tbats$mean), as.numeric(log(eibi.2017)))
+MAE_Tbats <- Metrics::mae(as.numeric(forecast.model.Tbats$mean), as.numeric(log(eibi.2017)))
+MAPE_Tbats <- Metrics::mape(as.numeric(forecast.model.Tbats$mean), as.numeric(log(eibi.2017)))
+MASE_Tbats <- Metrics::mase(as.numeric(forecast.model.Tbats$mean), as.numeric(log(eibi.2017)))
+
+## Creamos un Dataframe con los resultados obtenidos
+RMSE <- data.frame(RMSE_sarima_1, RMSE_sarima_2, RMSE_sarima_3, RMSE_sarima_4, RMSE_sarimax, 
+                RMSE_sarimax_f, RMSE_sarimax_IO, RMSE_bats, RMSE_Tbats)
+RMSE <- round(RMSE, digits = 6)
+rownames(RMSE) <- "RMSE"
+colnames(RMSE) <- c("SARIMA1", "SARIMA2", "SARIMA3", "SARIMA4", "SARIMAX", "SARIMAXF", "SARIMAXIO", "BATS", "TBATS")
+
+
+MSE <- data.frame(MSE_sarima_1, MSE_sarima_2, MSE_sarima_3, MSE_sarima_4, MSE_sarimax, 
+                MSE_sarimax_f, MSE_sarimax_IO, MSE_bats, MSE_Tbats)
+MSE <- round(MSE, digits = 6)
+rownames(MSE) <- "MSE"
+colnames(MSE) <- c("SARIMA1", "SARIMA2", "SARIMA3", "SARIMA4", "SARIMAX", "SARIMAXF", "SARIMAXIO", "BATS", "TBATS")
+
+MAE <- data.frame(MAE_sarima_1, MAE_sarima_2, MAE_sarima_3, MAE_sarima_4, MAE_sarimax, 
+                MAE_sarimax_f, MAE_sarimax_IO, MAE_bats, MAE_Tbats)
+MAE <- round(MSE, digits = 6)
+rownames(MAE) <- "MAE"
+colnames(MAE) <- c("SARIMA1", "SARIMA2", "SARIMA3", "SARIMA4", "SARIMAX", "SARIMAXF", "SARIMAXIO", "BATS", "TBATS")
+
+MAPE <- data.frame(MAPE_sarima_1, MAPE_sarima_2, MAPE_sarima_3, MAPE_sarima_4, MAPE_sarimax, 
+                MAPE_sarimax_f, MAPE_sarimax_IO, MAPE_bats, MAPE_Tbats)
+MAPE <- round(MAPE, digits = 6)
+rownames(MAPE) <- "MAPE"
+colnames(MAPE) <- c("SARIMA1", "SARIMA2", "SARIMA3", "SARIMA4", "SARIMAX", "SARIMAXF", "SARIMAXIO", "BATS", "TBATS")
+
+MASE <- data.frame(MASE_sarima_1, MASE_sarima_2, MASE_sarima_3, MASE_sarima_4, MASE_sarimax, 
+                MASE_sarimax_f, MASE_sarimax_IO, MASE_bats, MASE_Tbats)
+MASE <- round(MASE, digits = 6)
+rownames(MASE) <- "MASE"
+colnames(MASE) <- c("SARIMA1", "SARIMA2", "SARIMA3", "SARIMA4", "SARIMAX", "SARIMAXF", "SARIMAXIO", "BATS", "TBATS")
+
+##Unimos los resultados en una sola tabla
+prediction.errors <- rbind.data.frame(RMSE, MAE, MAPE, MASE)
+
+knitr::kable(prediction.errors)
+```
+
+Definicióm de los errores:
+  * root mean squared error (RMSE)
+  * mean absolute error (MAE) 
+  * mean absolute percentage error (MAPE) 
+  * mean absolute scaled error (MASE)
+
+LEYENDA:
+
+  * Original: Serie Transformada
+  * SARIMA1: SARIMA (1, 0, 0)(0, 1, 0)
+  * SARIMA2: SARIMA (1, 0, 0)(0, 1, 1)
+  * SARIMA3: SARIMA (2, 0, 0)(0, 1, 1)
+  * SARIMA4: SARIMA (2, 0, 1)(0, 1, 1)
+  * SARIMAX: SARIMAX (2, 0, 1)(0, 1, 1) con todo los outliers
+  * SARIMAXF: SARIMAX (2, 0, 1)(0, 1, 1) solo outliers significativos
+  * SARIMAXIO: SARIMAX (2, 0, 1)(0, 1, 1) usando Innovative Outliers como si fuesen Additive Outliers
+  * BATS 
+  * TBATS
+
+#Conclusión
+
+Observando los resultados los dos mejores modelos para predicir la serie de consumo eléctro en las Islas Baleares es el BATS y TBATS con diferencia respecto a los diversos modelos especificados.
+
+Lo que me llama la atención es que dentro de los modelos tipo SARIMA el que mejor predice la serie para la serie en el año 2017 es el SARIMA(1,0,0)(0,1,0), es decir, que el modelo más simple teniendo encuenta predice mejor que los otros modelos más complejor, incluso predice mejor que los modelos SARIMAX contratamiento de outliers muy costos.
+
+Entre el BATS y el TBAT por muy poco el BATS que es un modelo con mayor variablidad en las predicciones consigue captar mejor la estacionalidad, tendecia y desarrollo de la serie.
+
+Por otra parte, hbría que realizar una revisión del filtro de Kalman y ver porque no puedo procesar la predicción con las funciones que me ofrece el programa RSTudio. Continuaré investigando para ver a que se debe el error y de ese modo ver que tal funciona el filtro de Kalman.
+
+Para concluir, hay que decir que este tipo de serie son difíciles de predecir debido a que la industria eléctrica es muy peculiar y es muy importante intentar aproximar al máximo la predicción del consumo para ser lo más eficiente posible y lo difícil es capturar esos grandes picos que se producen, pero podemos aproximar gracias que conocemos los comportamientos estacionales y la tendencia de la serie y modelos tipo BATS y TBAT son modelos que manejan aceptablemente la estacionalidad de y la variabilidad de este tipo de series diarias. Esto último siempre y cuando no se produzcan crisis, innovaciones o cambio de patrones demograficos drásticos, etc. Por este motivo sería interesante combinar nuestros modelos con otros socioeconomicos para aproximar y poder adelantar cambios no previstos en la demanda eléctricas de las Islas Baleares.
+
+```
+
+
+
+
+
+
+
